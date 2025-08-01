@@ -77,16 +77,19 @@
       border: 3px solid #9ca3af;
       background: radial-gradient(circle, #f3f4f6 0%, #d1d5db 50%, #9ca3af 100%);
       color: #1e3a8a;
-      font-size: 16px;
+      font-size: 24px;
       font-weight: 500;
       cursor: pointer;
       box-shadow: inset 0 2px 5px rgba(0,0,0,0.2), 0 3px 6px rgba(0,0,0,0.3), 0 0 8px rgba(0,0,0,0.1);
       filter: brightness(1);
       transition: all 0.3s ease;
       outline: none;
+      display: flex;
+      align-items: center;
+      justify-content: center;
     }
     .toggle-button.on {
-      border-color: #60a5fa;
+      border-color: #22c55e;
       background: radial-gradient(circle, #e0e7ff 0%, #93c5fd 50%, #60a5fa 100%);
       box-shadow: inset 0 2px 5px rgba(0,0,0,0.2), 0 0 10px #60a5fa;
       filter: brightness(1.15);
@@ -142,6 +145,37 @@
       box-shadow: 0 4px 15px rgba(0,0,0,0.2);
       position: relative;
       animation: slideIn 0.3s ease;
+    }
+    .message-frame {
+      display: block;
+      background: rgba(255, 255, 255, 0.95);
+      border-radius: 10px;
+      padding: 15px;
+      max-width: 350px;
+      width: 100%;
+      box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+      margin-top: 10px;
+    }
+    .message-frame h3 {
+      color: #1e3a8a;
+      font-size: 16px;
+      margin: 0 0 8px;
+    }
+    .message-frame ul {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+      max-height: 100px;
+      overflow-y: auto;
+    }
+    .message-frame li {
+      background: #f8fafc;
+      padding: 8px;
+      margin: 5px 0;
+      border-radius: 5px;
+      font-size: 13px;
+      color: #4b5563;
+      box-shadow: 0 2px 3px rgba(0,0,0,0.05);
     }
     @keyframes slideIn {
       from { transform: translateY(-20px); opacity: 0; }
@@ -345,14 +379,14 @@
       .toggle-button {
         width: 50px;
         height: 50px;
-        font-size: 14px;
+        font-size: 20px;
         border-width: 2px;
       }
       .toggle-button.listening::after {
         width: 50px;
         height: 50px;
       }
-      .frame {
+      .frame, .message-frame {
         max-width: 100%;
         padding: 12px;
       }
@@ -401,7 +435,7 @@
       <input type="text" id="deviceName" placeholder="Tên thiết bị" value="Thiết bị">
     </div>
     <div class="control-inner">
-      <button class="toggle-button" id="controlButton">OFF</button>
+      <button class="toggle-button" id="controlButton">⏻</button>
       <div class="frame" id="frame">
         <span class="frame-close" onclick="hideFrame()">×</span>
         <div id="datetime"></div>
@@ -420,6 +454,10 @@
           <button onclick="clearTimerHistory()">Xóa lịch sử hẹn giờ</button>
         </div>
       </div>
+    </div>
+    <div class="message-frame" id="messageFrame">
+      <h3>Ghi âm</h3>
+      <ul id="messageList"></ul>
     </div>
   </div>
   <div id="historyModal" class="modal">
@@ -467,7 +505,6 @@
       const button = document.getElementById("controlButton");
       if (topic === "esp32/NVH/status") {
         button.classList.toggle("on", msg === "1o");
-        button.textContent = msg === "1o" ? "ON" : "OFF";
         addFullHistory(`Trạng thái từ ESP32: ${msg === "1o" ? "Bật" : "Tắt"}`);
       }
     });
@@ -478,13 +515,13 @@
     let pressTimer;
 
     function startPress(event) {
-      event.preventDefault(); // Ngăn hành vi mặc định (VD: zoom trên mobile)
+      event.preventDefault();
       pressTimer = setTimeout(() => {
         if (!isListening) {
           startVoiceRecognition();
           button.classList.add("listening");
         }
-      }, 2000);
+      }, 500);
     }
 
     function endPress() {
@@ -495,18 +532,14 @@
           const action = isOn ? "1f" : "1o";
           client.publish("esp32/NVH", action);
           button.classList.toggle("on");
-          button.textContent = isOn ? "OFF" : "ON";
           addFullHistory(`Công tắc thủ công: ${action === "1o" ? "Bật" : "Tắt"}`);
         }
       }
     }
 
-    // Mouse events cho desktop
     button.addEventListener("mousedown", startPress);
     button.addEventListener("mouseup", endPress);
     button.addEventListener("mouseleave", () => clearTimeout(pressTimer));
-
-    // Touch events cho mobile
     button.addEventListener("touchstart", startPress);
     button.addEventListener("touchend", endPress);
     button.addEventListener("touchcancel", () => clearTimeout(pressTimer));
@@ -521,6 +554,16 @@
     });
   }
 
+  function addMessage(text) {
+    const messageList = document.getElementById("messageList");
+    const li = document.createElement("li");
+    li.textContent = text || "Đang ghi âm...";
+    messageList.prepend(li);
+    while (messageList.children.length > 5) {
+      messageList.removeChild(messageList.lastChild);
+    }
+  }
+
   function startVoiceRecognition() {
     if (isListening) return;
     isListening = true;
@@ -529,6 +572,7 @@
 
     if (!SpeechRecognition) {
       alert("Trình duyệt không hỗ trợ nhận diện giọng nói. Vui lòng dùng Chrome trên Android hoặc desktop.");
+      addMessage("Lỗi: Trình duyệt không hỗ trợ nhận diện giọng nói.");
       stopVoiceRecognition();
       return;
     }
@@ -536,46 +580,60 @@
     recognition = new SpeechRecognition();
     recognition.lang = "vi-VN";
     recognition.continuous = false;
-    recognition.interimResults = false;
+    recognition.interimResults = true;
 
-    // Kiểm tra quyền microphone
     navigator.permissions.query({ name: 'microphone' }).then(permissionStatus => {
       if (permissionStatus.state === 'denied') {
         alert("Quyền truy cập microphone bị từ chối. Vui lòng cấp quyền trong cài đặt trình duyệt.");
+        addMessage("Lỗi: Quyền truy cập microphone bị từ chối.");
         stopVoiceRecognition();
         return;
       }
 
       recognition.onresult = (event) => {
-        const transcript = event.results[0][0].transcript.toLowerCase();
-        const button = document.getElementById("controlButton");
-        if (transcript.includes("mở " + deviceName) || transcript.includes("bật " + deviceName)) {
-          if (client && client.connected) {
-            client.publish("esp32/NVH", "1o");
-            button.classList.add("on");
-            button.textContent = "ON";
-            addFullHistory(`Điều khiển bằng giọng nói: Bật (${transcript})`);
-          }
-        } else if (transcript.includes("tắt " + deviceName)) {
-          if (client && client.connected) {
-            client.publish("esp32/NVH", "1f");
-            button.classList.remove("on");
-            button.textContent = "OFF";
-            addFullHistory(`Điều khiển bằng giọng nói: Tắt (${transcript})`);
+        let interimTranscript = '';
+        let finalTranscript = '';
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          const transcript = event.results[i][0].transcript;
+          if (event.results[i].isFinal) {
+            finalTranscript += transcript;
+          } else {
+            interimTranscript += transcript;
           }
         }
-        stopVoiceRecognition();
+        addMessage(interimTranscript || finalTranscript);
+
+        if (finalTranscript) {
+          const button = document.getElementById("controlButton");
+          if (finalTranscript.toLowerCase().includes("mở " + deviceName) || finalTranscript.toLowerCase().includes("bật " + deviceName)) {
+            if (client && client.connected) {
+              client.publish("esp32/NVH", "1o");
+              button.classList.add("on");
+              addFullHistory(`Điều khiển bằng giọng nói: Bật (${finalTranscript})`);
+            }
+          } else if (finalTranscript.toLowerCase().includes("tắt " + deviceName)) {
+            if (client && client.connected) {
+              client.publish("esp32/NVH", "1f");
+              button.classList.remove("on");
+              addFullHistory(`Điều khiển bằng giọng nói: Tắt (${finalTranscript})`);
+            }
+          }
+          stopVoiceRecognition();
+        }
       };
 
       recognition.onerror = (event) => {
         console.error("Voice recognition error:", event.error);
+        let errorMessage = "";
         if (event.error === "no-speech") {
-          alert("Không nhận được âm thanh. Vui lòng thử lại.");
+          errorMessage = "Không nhận được âm thanh. Vui lòng thử lại.";
         } else if (event.error === "not-allowed") {
-          alert("Quyền truy cập microphone bị từ chối. Vui lòng cấp quyền trong cài đặt trình duyệt.");
+          errorMessage = "Quyền truy cập microphone bị từ chối. Vui lòng cấp quyền trong cài đặt trình duyệt.";
         } else {
-          alert("Lỗi nhận diện giọng nói: " + event.error);
+          errorMessage = "Lỗi nhận diện giọng nói: " + event.error;
         }
+        alert(errorMessage);
+        addMessage("Lỗi: " + errorMessage);
         stopVoiceRecognition();
       };
 
@@ -586,14 +644,17 @@
       try {
         recognition.start();
         console.log("Voice recognition started");
+        addMessage("Đang ghi âm...");
       } catch (error) {
         console.error("Error starting recognition:", error);
         alert("Không thể bắt đầu nhận diện giọng nói. Vui lòng kiểm tra microphone và quyền truy cập.");
+        addMessage("Lỗi: Không thể bắt đầu nhận diện giọng nói.");
         stopVoiceRecognition();
       }
     }).catch(error => {
       console.error("Permission query error:", error);
       alert("Không thể kiểm tra quyền microphone. Vui lòng kiểm tra cài đặt trình duyệt.");
+      addMessage("Lỗi: Không thể kiểm tra quyền microphone.");
       stopVoiceRecognition();
     });
   }
@@ -737,8 +798,8 @@
   }
 
   function loadFullHistory() {
-    const history = JSON.parse(localStorage.getItem("fullHistory") || "[]");
     const fullHistoryList = document.getElementById("fullHistoryList");
+    const history = JSON.parse(localStorage.getItem("fullHistory") || "[]");
     fullHistoryList.innerHTML = "";
     history.reverse().forEach(message => {
       const li = document.createElement("li");
