@@ -50,7 +50,6 @@
       width: 100%;
       max-width: 300px;
     }
-    /* Device Name Input */
     .device-name-container {
       margin: 10px 0;
     }
@@ -70,7 +69,6 @@
       border-color: #60a5fa;
       box-shadow: 0 0 5px rgba(96, 165, 250, 0.5);
     }
-    /* Button Styling */
     .toggle-button {
       position: relative;
       width: 60px;
@@ -240,7 +238,6 @@
     .history-container button:hover {
       background: #dc2626;
     }
-    /* Modal Styling */
     .modal {
       display: none;
       position: fixed;
@@ -325,7 +322,6 @@
     .close:hover {
       color: #ef4444;
     }
-    /* Responsive Design */
     @media (max-width: 600px) {
       body {
         padding: 10px;
@@ -481,16 +477,17 @@
     const button = document.getElementById("controlButton");
     let pressTimer;
 
-    button.addEventListener("mousedown", () => {
+    function startPress(event) {
+      event.preventDefault(); // Ngăn hành vi mặc định (VD: zoom trên mobile)
       pressTimer = setTimeout(() => {
         if (!isListening) {
           startVoiceRecognition();
           button.classList.add("listening");
         }
       }, 2000);
-    });
+    }
 
-    button.addEventListener("mouseup", () => {
+    function endPress() {
       clearTimeout(pressTimer);
       if (!isListening) {
         if (client && client.connected) {
@@ -502,11 +499,17 @@
           addFullHistory(`Công tắc thủ công: ${action === "1o" ? "Bật" : "Tắt"}`);
         }
       }
-    });
+    }
 
-    button.addEventListener("mouseleave", () => {
-      clearTimeout(pressTimer);
-    });
+    // Mouse events cho desktop
+    button.addEventListener("mousedown", startPress);
+    button.addEventListener("mouseup", endPress);
+    button.addEventListener("mouseleave", () => clearTimeout(pressTimer));
+
+    // Touch events cho mobile
+    button.addEventListener("touchstart", startPress);
+    button.addEventListener("touchend", endPress);
+    button.addEventListener("touchcancel", () => clearTimeout(pressTimer));
   }
 
   function setupDeviceName() {
@@ -522,47 +525,77 @@
     if (isListening) return;
     isListening = true;
     const deviceName = document.getElementById("deviceName").value.trim().toLowerCase();
-    if (!window.SpeechRecognition && !window.webkitSpeechRecognition) {
-      alert("Trình duyệt không hỗ trợ nhận diện giọng nói!");
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+
+    if (!SpeechRecognition) {
+      alert("Trình duyệt không hỗ trợ nhận diện giọng nói. Vui lòng dùng Chrome trên Android hoặc desktop.");
       stopVoiceRecognition();
       return;
     }
-    recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
+
+    recognition = new SpeechRecognition();
     recognition.lang = "vi-VN";
     recognition.continuous = false;
     recognition.interimResults = false;
 
-    recognition.onresult = (event) => {
-      const transcript = event.results[0][0].transcript.toLowerCase();
-      const button = document.getElementById("controlButton");
-      if (transcript.includes("mở " + deviceName) || transcript.includes("bật " + deviceName)) {
-        if (client && client.connected) {
-          client.publish("esp32/NVH", "1o");
-          button.classList.add("on");
-          button.textContent = "ON";
-          addFullHistory(`Điều khiển bằng giọng nói: Bật (${transcript})`);
-        }
-      } else if (transcript.includes("tắt " + deviceName)) {
-        if (client && client.connected) {
-          client.publish("esp32/NVH", "1f");
-          button.classList.remove("on");
-          button.textContent = "OFF";
-          addFullHistory(`Điều khiển bằng giọng nói: Tắt (${transcript})`);
-        }
+    // Kiểm tra quyền microphone
+    navigator.permissions.query({ name: 'microphone' }).then(permissionStatus => {
+      if (permissionStatus.state === 'denied') {
+        alert("Quyền truy cập microphone bị từ chối. Vui lòng cấp quyền trong cài đặt trình duyệt.");
+        stopVoiceRecognition();
+        return;
       }
-      stopVoiceRecognition();
-    };
 
-    recognition.onerror = (event) => {
-      console.error("Voice recognition error:", event.error);
-      stopVoiceRecognition();
-    };
+      recognition.onresult = (event) => {
+        const transcript = event.results[0][0].transcript.toLowerCase();
+        const button = document.getElementById("controlButton");
+        if (transcript.includes("mở " + deviceName) || transcript.includes("bật " + deviceName)) {
+          if (client && client.connected) {
+            client.publish("esp32/NVH", "1o");
+            button.classList.add("on");
+            button.textContent = "ON";
+            addFullHistory(`Điều khiển bằng giọng nói: Bật (${transcript})`);
+          }
+        } else if (transcript.includes("tắt " + deviceName)) {
+          if (client && client.connected) {
+            client.publish("esp32/NVH", "1f");
+            button.classList.remove("on");
+            button.textContent = "OFF";
+            addFullHistory(`Điều khiển bằng giọng nói: Tắt (${transcript})`);
+          }
+        }
+        stopVoiceRecognition();
+      };
 
-    recognition.onend = () => {
-      stopVoiceRecognition();
-    };
+      recognition.onerror = (event) => {
+        console.error("Voice recognition error:", event.error);
+        if (event.error === "no-speech") {
+          alert("Không nhận được âm thanh. Vui lòng thử lại.");
+        } else if (event.error === "not-allowed") {
+          alert("Quyền truy cập microphone bị từ chối. Vui lòng cấp quyền trong cài đặt trình duyệt.");
+        } else {
+          alert("Lỗi nhận diện giọng nói: " + event.error);
+        }
+        stopVoiceRecognition();
+      };
 
-    recognition.start();
+      recognition.onend = () => {
+        stopVoiceRecognition();
+      };
+
+      try {
+        recognition.start();
+        console.log("Voice recognition started");
+      } catch (error) {
+        console.error("Error starting recognition:", error);
+        alert("Không thể bắt đầu nhận diện giọng nói. Vui lòng kiểm tra microphone và quyền truy cập.");
+        stopVoiceRecognition();
+      }
+    }).catch(error => {
+      console.error("Permission query error:", error);
+      alert("Không thể kiểm tra quyền microphone. Vui lòng kiểm tra cài đặt trình duyệt.");
+      stopVoiceRecognition();
+    });
   }
 
   function stopVoiceRecognition() {
