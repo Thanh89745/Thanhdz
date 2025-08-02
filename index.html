@@ -77,7 +77,7 @@
       border: 3px solid #9ca3af;
       background: radial-gradient(circle, #f3f4f6 0%, #d1d5db 50%, #9ca3af 100%);
       color: #1e3a8a;
-      font-size: 24px;
+      font-size: 16px;
       font-weight: 500;
       cursor: pointer;
       box-shadow: inset 0 2px 5px rgba(0,0,0,0.2), 0 3px 6px rgba(0,0,0,0.3), 0 0 8px rgba(0,0,0,0.1);
@@ -135,7 +135,7 @@
       width: 100%;
       justify-content: center;
     }
-    .frame {
+    .frame, .message-frame {
       display: none;
       background: rgba(255, 255, 255, 0.95);
       border-radius: 10px;
@@ -147,13 +147,6 @@
       animation: slideIn 0.3s ease;
     }
     .message-frame {
-      display: block;
-      background: rgba(255, 255, 255, 0.95);
-      border-radius: 10px;
-      padding: 15px;
-      max-width: 350px;
-      width: 100%;
-      box-shadow: 0 4px 15px rgba(0,0,0,0.2);
       margin-top: 10px;
     }
     .message-frame h3 {
@@ -379,7 +372,7 @@
       .toggle-button {
         width: 50px;
         height: 50px;
-        font-size: 20px;
+        font-size: 14px;
         border-width: 2px;
       }
       .toggle-button.listening::after {
@@ -435,7 +428,7 @@
       <input type="text" id="deviceName" placeholder="Tên thiết bị" value="Thiết bị">
     </div>
     <div class="control-inner">
-      <button class="toggle-button" id="controlButton">⏻</button>
+      <button class="toggle-button" id="controlButton">OFF</button>
       <div class="frame" id="frame">
         <span class="frame-close" onclick="hideFrame()">×</span>
         <div id="datetime"></div>
@@ -505,6 +498,7 @@
       const button = document.getElementById("controlButton");
       if (topic === "esp32/NVH/status") {
         button.classList.toggle("on", msg === "1o");
+        button.textContent = msg === "1o" ? "ON" : "OFF";
         addFullHistory(`Trạng thái từ ESP32: ${msg === "1o" ? "Bật" : "Tắt"}`);
       }
     });
@@ -532,6 +526,7 @@
           const action = isOn ? "1f" : "1o";
           client.publish("esp32/NVH", action);
           button.classList.toggle("on");
+          button.textContent = isOn ? "OFF" : "ON";
           addFullHistory(`Công tắc thủ công: ${action === "1o" ? "Bật" : "Tắt"}`);
         }
       }
@@ -569,6 +564,10 @@
     isListening = true;
     const deviceName = document.getElementById("deviceName").value.trim().toLowerCase();
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+
+    // Show both message and history frames
+    document.getElementById("messageFrame").style.display = "block";
+    document.getElementById("frame").style.display = "block";
 
     if (!SpeechRecognition) {
       alert("Trình duyệt không hỗ trợ nhận diện giọng nói. Vui lòng dùng Chrome trên Android hoặc desktop.");
@@ -609,12 +608,14 @@
             if (client && client.connected) {
               client.publish("esp32/NVH", "1o");
               button.classList.add("on");
+              button.textContent = "ON";
               addFullHistory(`Điều khiển bằng giọng nói: Bật (${finalTranscript})`);
             }
           } else if (finalTranscript.toLowerCase().includes("tắt " + deviceName)) {
             if (client && client.connected) {
               client.publish("esp32/NVH", "1f");
               button.classList.remove("on");
+              button.textContent = "OFF";
               addFullHistory(`Điều khiển bằng giọng nói: Tắt (${finalTranscript})`);
             }
           }
@@ -667,6 +668,10 @@
     isListening = false;
     const button = document.getElementById("controlButton");
     button.classList.remove("listening");
+    // Hide both message and history frames
+    document.getElementById("messageFrame").style.display = "none";
+    document.getElementById("frame").style.display = "none";
+    document.getElementById("messageList").innerHTML = ""; // Clear message list
   }
 
   function updateDateTime() {
@@ -798,8 +803,8 @@
   }
 
   function loadFullHistory() {
-    const fullHistoryList = document.getElementById("fullHistoryList");
     const history = JSON.parse(localStorage.getItem("fullHistory") || "[]");
+    const fullHistoryList = document.getElementById("fullHistoryList");
     fullHistoryList.innerHTML = "";
     history.reverse().forEach(message => {
       const li = document.createElement("li");
@@ -825,6 +830,10 @@
   function toggleFrame() {
     const frame = document.getElementById("frame");
     frame.style.display = frame.style.display === "block" ? "none" : "block";
+    // Ensure message frame stays hidden unless voice recognition is active
+    if (!isListening) {
+      document.getElementById("messageFrame").style.display = "none";
+    }
   }
 
   function hideFrame() {
